@@ -1,3 +1,3 @@
 * text=auto eol=lf
-general/overlay/usr/bin/* -text eol=lf
-*.sh -text eol=lf
+general/overlay/usr/bin/wifibroadcast text eol=lf
+general/overlay/usr/share/openipc/customizer.sh text eol=lf
