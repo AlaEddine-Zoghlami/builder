@@ -148,11 +148,13 @@ start_telemetry() {
 		if [ "$router" = "msposd" ]; then
 			size=$(curl -s localhost/api/v1/config.json | jsonfilter -qe "@.video0.size")
 		fi
-		msposd -b 115200 -c 8 -r "$osd_fps" -m /dev/"$serial" \
+		msposd -b 115200 -c 8 -r "$osd_fps" -j --mspvtx -m /dev/"$serial" \
 			-o 127.0.0.1:"$port_tx" -z "$size" > /dev/null &
 
 		sleep 5
-		echo "&L70&F28&G8CPU:&C TEMP:&T\n&B" >/tmp/MSPOSD.msg
+		# Rich system HUD (works without an FC). When the FC is connected on
+		# /dev/$serial with MSP enabled, its DisplayPort OSD draws on top.
+		printf "&L10&F30&G8APFPV 8822CU  &t\n&L10&F24CPU:&C  TEMP:&T  WiFi:&W\n&L10&F24VIDEO:&B\n&L10&F24WFB DROPS:&p\n" >/tmp/MSPOSD.msg
 	fi
 }
 
@@ -249,6 +251,19 @@ start() {
 	stop
 	start_broadcast
 	start_tunnel
+
+	# rtp_local pairing: majestic's outgoing socket only links to a wfb_tx
+	# that is ALREADY running. majestic starts at boot via S95 (before this
+	# S98 script), so its socket never connects to start_broadcast's wfb_tx.
+	# Restart majestic now that wfb_tx is up, BEFORE start_telemetry, so the
+	# stream links and msposd's OSD region attaches to the fresh majestic
+	# (avoids MI_RGN 'Handle not found'). HW-validated: this is the
+	# difference between ~90 kbps control-only and full ~13 Mbit/s video.
+	if [ -x /etc/init.d/S95majestic ]; then
+		/etc/init.d/S95majestic restart
+		sleep 1
+	fi
+
 	start_telemetry
 }
 

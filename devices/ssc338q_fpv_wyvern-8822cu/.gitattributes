@@ -1,3 +1,6 @@
 * text=auto eol=lf
 general/overlay/usr/bin/wifibroadcast text eol=lf
 general/overlay/usr/share/openipc/customizer.sh text eol=lf
+
+*.png binary
+*.png -text
