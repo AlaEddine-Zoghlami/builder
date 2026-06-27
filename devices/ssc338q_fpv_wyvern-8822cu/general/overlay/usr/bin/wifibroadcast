@@ -59,7 +59,7 @@ load_modules() {
 
 	if [ "$driver" = "88x2cu" ]; then
 		# RTL8822CU (libc0607 rtl88x2cu): rtw_regd_src=1 unlocks 5 GHz
-		# (driver otherwise pins country 00). No MaxTxBufLen param here.
+		# (driver otherwise pins country 00). It does not take MaxTxBufLen.
 		modprobe 88x2cu rtw_regd_src=1 rtw_tx_pwr_by_rate=0 rtw_tx_pwr_lmt_enable=0
 	else
 		if [ "$driver" != "88XXau" ]; then
@@ -96,8 +96,8 @@ load_interface() {
 	[ "$width" = "40" ] && wfb_width=HT40+ || wfb_width=HT20
 
 	if [ "$driver" = "88x2cu" ]; then
-		# RTL8822CU rejects a channel change while the iface is UP (EBUSY -16).
-		# A down -> up cycle before set-channel works. reg US enables 5.8 GHz.
+		# RTL8822CU rejects a channel change while the iface is UP (EBUSY -16);
+		# a down -> up cycle before set-channel works. reg US enables 5.8 GHz.
 		ifconfig "$wfb_dev" down
 		iw reg set US
 		ifconfig "$wfb_dev" up
@@ -148,13 +148,11 @@ start_telemetry() {
 		if [ "$router" = "msposd" ]; then
 			size=$(curl -s localhost/api/v1/config.json | jsonfilter -qe "@.video0.size")
 		fi
-		msposd -b 115200 -c 8 -r "$osd_fps" -j --mspvtx -m /dev/"$serial" \
+		msposd -b 115200 -c 8 -r "$osd_fps" -m /dev/"$serial" \
 			-o 127.0.0.1:"$port_tx" -z "$size" > /dev/null &
 
 		sleep 5
-		# Rich system HUD (works without an FC). When the FC is connected on
-		# /dev/$serial with MSP enabled, its DisplayPort OSD draws on top.
-		printf "&L10&F30&G8APFPV 8822CU  &t\n&L10&F24CPU:&C  TEMP:&T  WiFi:&W\n&L10&F24VIDEO:&B\n&L10&F24WFB DROPS:&p\n" >/tmp/MSPOSD.msg
+		echo "&L70&F28&G8CPU:&C TEMP:&T\n&B" >/tmp/MSPOSD.msg
 	fi
 }
 
@@ -234,36 +232,9 @@ start() {
 		killall -1 majestic
 	fi
 
-	# Self-heal: video_settings runs only on first boot and its majestic.yaml
-	# writes don't always persist. Enforce the FPV overlay + wfb outgoing on
-	# every start (idempotent; reload majestic only if something changed).
-	maj_changed=0
-	for kv in ".fpv.enabled=true" ".outgoing.enabled=true" ".outgoing.wfb=true"; do
-		k=${kv%=*}
-		v=${kv#*=}
-		if [ "$(cli -g "$k")" != "$v" ]; then
-			cli -s "$k" "$v"
-			maj_changed=1
-		fi
-	done
-	[ "$maj_changed" = 1 ] && killall -1 majestic 2>/dev/null
-
 	stop
 	start_broadcast
 	start_tunnel
-
-	# rtp_local pairing: majestic's outgoing socket only links to a wfb_tx
-	# that is ALREADY running. majestic starts at boot via S95 (before this
-	# S98 script), so its socket never connects to start_broadcast's wfb_tx.
-	# Restart majestic now that wfb_tx is up, BEFORE start_telemetry, so the
-	# stream links and msposd's OSD region attaches to the fresh majestic
-	# (avoids MI_RGN 'Handle not found'). HW-validated: this is the
-	# difference between ~90 kbps control-only and full ~13 Mbit/s video.
-	if [ -x /etc/init.d/S95majestic ]; then
-		/etc/init.d/S95majestic restart
-		sleep 1
-	fi
-
 	start_telemetry
 }
 
