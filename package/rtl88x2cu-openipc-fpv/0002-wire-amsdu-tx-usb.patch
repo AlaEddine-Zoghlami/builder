@@ -1,0 +1,73 @@
+diff --git a/hal/rtl8822c/usb/rtl8822cu_xmit.c b/hal/rtl8822c/usb/rtl8822cu_xmit.c
+index 2e2acc1..72f4c72 100644
+--- a/hal/rtl8822c/usb/rtl8822cu_xmit.c
++++ b/hal/rtl8822c/usb/rtl8822cu_xmit.c
+@@ -538,6 +538,68 @@ static s32 rtl8822cu_xmitframe_complete(PADAPTER padapter, struct xmit_priv *pxm
+ 	}
+ #endif
+ 
++#ifdef CONFIG_TX_AMSDU
++	/* APFPV: wire standalone A-MSDU TX for the USB path. Realtek only ever wired
++	 * the coalesce builder + AC timers into the PCIe xmit (hal/*/pci/*_xmit.c);
++	 * on USB they were dead code (no caller), so tx_amsdu was inert. Here we
++	 * coalesce a pair of pending QoS data frames into one A-MSDU MPDU and dump it,
++	 * before the normal bulk-aggregation path. Gate:
++	 *   - pxmitbuf == NULL: we own buffer allocation (the buf_handler calls with NULL).
++	 *   - check_amsdu_tx_support(): tx_amsdu==1, or ==2 above tx_amsdu_rate (proc knobs).
++	 *   - check_amsdu(): per-frame QoS + unicast + CCMP; with A-MPDU off this is the
++	 *     standalone-AMSDU-valid case (IS_AMSDU_AMPDU_NOT_VALID is false when ampdu_en==0). */
++	if (pxmitbuf == NULL && check_amsdu_tx_support(padapter)
++	    && check_fwstate(&padapter->mlmepriv, WIFI_AP_STATE | WIFI_STATION_STATE)) {
++		int amsdu_nf = 0;
++		struct xmit_frame *amsdu_peek = rtw_get_xframe(pxmitpriv, &amsdu_nf);
++
++		if (amsdu_peek && amsdu_nf >= 2 && check_amsdu(amsdu_peek)) {
++			struct xmit_buf *abuf = rtw_alloc_xmitbuf(pxmitpriv);
++
++			if (abuf) {
++				struct xmit_frame *fa = rtw_dequeue_xframe(pxmitpriv,
++						pxmitpriv->hwxmits, pxmitpriv->hwxmit_entry);
++
++				if (fa) {
++					fa->pxmitbuf = abuf;
++					fa->buf_addr = abuf->pbuf;
++					abuf->priv_data = fa;
++
++					amsdu_peek = rtw_get_xframe(pxmitpriv, &amsdu_nf);
++					if (amsdu_peek && amsdu_nf >= 1 && check_amsdu(amsdu_peek)) {
++						struct xmit_buf *bbuf = rtw_alloc_xmitbuf(pxmitpriv);
++
++						if (bbuf) {
++							struct xmit_frame *fb = rtw_dequeue_xframe(pxmitpriv,
++									pxmitpriv->hwxmits, pxmitpriv->hwxmit_entry);
++
++							if (fb) {
++								fb->pxmitbuf = bbuf;
++								fb->buf_addr = bbuf->pbuf;
++								bbuf->priv_data = fb;
++
++								/* build A-MSDU [fa][fb] into fb's buffer, dump fb */
++								rtw_xmitframe_coalesce_amsdu(padapter, fb, fa);
++								rtw_free_xmitframe(pxmitpriv, fa);
++								rtw_free_xmitbuf(pxmitpriv, abuf);
++								pxmitpriv->amsdu_debug_coalesce_two++;
++								rtw_dump_xframe(padapter, fb);
++								return _TRUE;
++							}
++							rtw_free_xmitbuf(pxmitpriv, bbuf);
++						}
++					}
++					/* could not pair: send fa as a normal single frame */
++					pxmitpriv->amsdu_debug_coalesce_one++;
++					rtw_dump_xframe(padapter, fa);
++					return _TRUE;
++				}
++				rtw_free_xmitbuf(pxmitpriv, abuf);
++			}
++		}
++	}
++#endif /* CONFIG_TX_AMSDU */
++
+ 	/* check xmitbuffer is ok */
+ 	if (pxmitbuf == NULL) {
+ 		pxmitbuf = rtw_alloc_xmitbuf(pxmitpriv);
