@@ -1,5 +1,5 @@
 diff --git a/hal/rtl8822c/usb/rtl8822cu_xmit.c b/hal/rtl8822c/usb/rtl8822cu_xmit.c
-index 2e2acc1..72f4c72 100644
+index 2e2acc1..3562e8e 100644
 --- a/hal/rtl8822c/usb/rtl8822cu_xmit.c
 +++ b/hal/rtl8822c/usb/rtl8822cu_xmit.c
 @@ -538,6 +538,68 @@ static s32 rtl8822cu_xmitframe_complete(PADAPTER padapter, struct xmit_priv *pxm
@@ -8,7 +8,7 @@ index 2e2acc1..72f4c72 100644
  
 +#ifdef CONFIG_TX_AMSDU
 +	/* APFPV: wire standalone A-MSDU TX for the USB path. Realtek only ever wired
-+	 * the coalesce builder + AC timers into the PCIe xmit (hal/*/pci/*_xmit.c);
++	 * the coalesce builder + AC timers into the PCIe xmit path (rtl8822ce_xmit.c);
 +	 * on USB they were dead code (no caller), so tx_amsdu was inert. Here we
 +	 * coalesce a pair of pending QoS data frames into one A-MSDU MPDU and dump it,
 +	 * before the normal bulk-aggregation path. Gate:
